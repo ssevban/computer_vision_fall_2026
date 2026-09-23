@@ -85,12 +85,67 @@ for i, name in enumerate(["R", "G", "B"]):
         np.mean((img[:, :, i] - rec[:, :, i]) ** 2)))
 print("toplam: %6.2f dB" % psnr(img, rec))
 
-plt.figure(figsize=(6, 9))
-plt.imshow(img.astype(np.uint8))
-plt.axis("off")
-plt.title("orijinal (referans)")
+
+err = np.abs(img - rec)
+
+print()
+print("--- hata dagilimi ---")
+for i, name in enumerate(["R", "G", "B"]):
+    print("%s : ortalama %5.2f   maks %6.2f" % (name, err[:, :, i].mean(), err[:, :, i].max()))
+
+gray = img.mean(axis=2)
+gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+grad = np.hypot(gx, gy)
+
+edge = grad >= np.percentile(grad, 90)
+flat = grad <= np.percentile(grad, 50)
+err_sum = err.sum(axis=2)
+
+print()
+print("--- hata nerede toplaniyor ---")
+print("kenar pikselleri (ust %%10 gradyan): ortalama hata %6.2f" % err_sum[edge].mean())
+print("duz pikseller    (alt %%50 gradyan): ortalama hata %6.2f" % err_sum[flat].mean())
+print("oran                              : %.1f kat" % (err_sum[edge].mean() / err_sum[flat].mean()))
+
+box = cv2.boxFilter(err_sum, -1, (32, 32), normalize=False)
+cy, cx = np.unravel_index(np.argmax(box), box.shape)
+y0 = int(np.clip(cy - 16, 0, H - 32))
+x0 = int(np.clip(cx - 16, 0, W - 32))
+print()
+print("en bozuk 32x32 bolge: satir %d-%d, sutun %d-%d" % (y0, y0 + 32, x0, x0 + 32))
+
+fig, ax = plt.subplots(1, 3, figsize=(14, 7))
+for i, name in enumerate(["R", "G", "B"]):
+    im = ax[i].imshow(err[:, :, i], cmap="inferno", vmin=0, vmax=60)
+    ax[i].set_title("%s hata haritasi" % name)
+    ax[i].axis("off")
+fig.colorbar(im, ax=ax, fraction=0.03)
+plt.savefig(OUT / "03_hata_haritasi.png", dpi=120, bbox_inches="tight")
+
+crop_o = img[y0:y0 + 32, x0:x0 + 32]
+crop_r = rec[y0:y0 + 32, x0:x0 + 32]
+fig, ax = plt.subplots(1, 3, figsize=(14, 5))
+ax[0].imshow(crop_o.astype(np.uint8), interpolation="nearest")
+ax[0].set_title("orijinal")
+ax[1].imshow(np.clip(crop_r, 0, 255).astype(np.uint8), interpolation="nearest")
+ax[1].set_title("demozaiklenmis (zipper)")
+im = ax[2].imshow(np.abs(crop_o - crop_r).sum(axis=2), cmap="inferno", interpolation="nearest")
+ax[2].set_title("fark")
+for a in ax:
+    a.axis("off")
+fig.colorbar(im, ax=ax[2], fraction=0.046)
+plt.savefig(OUT / "04_zipper.png", dpi=150, bbox_inches="tight")
+
+fig, ax = plt.subplots(1, 2, figsize=(11, 9))
+ax[0].imshow(img.astype(np.uint8))
+ax[0].set_title("orijinal (referans)")
+ax[1].imshow(np.clip(rec, 0, 255).astype(np.uint8))
+ax[1].set_title("demozaiklenmis (%.2f dB)" % psnr(img, rec))
+for a in ax:
+    a.axis("off")
 plt.tight_layout()
-plt.savefig(OUT / "01_orijinal.png", dpi=120)
+plt.savefig(OUT / "01_orijinal_vs_geri_kurulmus.png", dpi=120)
 
 fig, ax = plt.subplots(1, 3, figsize=(13, 5))
 ax[0].imshow(raw, cmap="gray", vmin=0, vmax=255)
